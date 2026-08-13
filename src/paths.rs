@@ -125,13 +125,8 @@ fn migrate_legacy_to_xdg(legacy: &Path, xdg: &Path) -> Result<()> {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating {}", parent.display()))?;
     }
-    std::fs::rename(legacy, xdg).with_context(|| {
-        format!(
-            "migrating {} -> {}",
-            legacy.display(),
-            xdg.display()
-        )
-    })?;
+    std::fs::rename(legacy, xdg)
+        .with_context(|| format!("migrating {} -> {}", legacy.display(), xdg.display()))?;
 
     // Best-effort compatibility symlink: ~/.guise -> ~/.config/guise
     #[cfg(unix)]
