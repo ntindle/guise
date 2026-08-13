@@ -1,4 +1,4 @@
-//! Tool-level settings at `~/.guise/config.json`. Minimal: the instance model
+//! Tool-level settings at `~/.config/guise/config.json`. Minimal: the instance model
 //! removed almost all knobs (no relaunch/backup/sync toggles).
 
 use crate::account::write_bytes_atomic;

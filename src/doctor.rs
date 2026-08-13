@@ -51,7 +51,7 @@ pub fn run(paths: &Paths) -> Result<Report> {
 
     let store_ok = paths.guise_root.exists();
     checks.push(Check {
-        name: "guise store (~/.guise)".into(),
+        name: "guise store".into(),
         ok: true,
         detail: if store_ok {
             paths.guise_root.display().to_string()

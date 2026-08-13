@@ -146,7 +146,7 @@ guise checkup
 
   ✓ Claude.app               /Applications/Claude.app
   ✓ Claude executable        /Applications/Claude.app/Contents/MacOS/Claude
-  ✓ guise store (~/.guise)   /Users/you/.guise
+  ✓ guise store              /Users/you/.config/guise
 
   Saved accounts:
     1. work  ·  you@company.com ● running
@@ -157,9 +157,13 @@ guise checkup
 
 ## Where guise keeps its files
 
-Each account is a folder under `~/.guise/accounts/` — its own complete Claude
-profile. Delete `~/.guise` and guise forgets every account (each one's login just
-goes away with its folder; nothing else on your Mac is touched).
+Each account is a folder under `~/.config/guise/accounts/` — its own complete Claude
+profile. Delete `~/.config/guise` and guise forgets every account (each one's login
+just goes away with its folder; nothing else on your Mac is touched).
+
+> **Upgrading?** If you have an existing `~/.guise` directory, guise automatically
+> migrates it to `~/.config/guise` on first run and leaves a compatibility symlink
+> at the old path. You can also set `$XDG_CONFIG_HOME` to override the location.
 
 ## Settings
 
@@ -182,7 +186,8 @@ Add `--json` to `guise ls` or `guise doctor` for scriptable output.
 
 ```console
 rm "$(which guise)"      # remove the program
-rm -rf ~/.guise          # remove your saved accounts (optional)
+rm -rf ~/.config/guise   # remove your saved accounts (optional)
+rm -f ~/.guise           # remove the compatibility symlink, if present
 ```
 
 ## License

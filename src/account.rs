@@ -22,7 +22,7 @@ pub struct Meta {
 /// A saved account on disk.
 #[derive(Debug, Clone)]
 pub struct Account {
-    /// `~/.guise/accounts/<slot>-<name>/`
+    /// `~/.config/guise/accounts/<slot>-<name>/`
     pub dir: PathBuf,
     pub meta: Meta,
 }
@@ -329,7 +329,7 @@ mod tests {
         Paths {
             home: home.clone(),
             app: root.join("Claude.app"),
-            guise_root: home.join(".guise"),
+            guise_root: home.join(".config").join("guise"),
         }
     }
 

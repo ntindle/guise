@@ -19,18 +19,25 @@ pub struct Paths {
     pub home: PathBuf,
     /// `Claude.app` bundle.
     pub app: PathBuf,
-    /// `~/.guise` root of the account store.
+    /// Root of the account store (`~/.config/guise` or legacy `~/.guise`).
     pub guise_root: PathBuf,
 }
 
 impl Paths {
     /// Resolve all paths from the environment.
+    ///
+    /// If data exists at the legacy `~/.guise` location, it is automatically
+    /// migrated to `~/.config/guise` (XDG-compliant). The lookup order is:
+    ///   1. `$XDG_CONFIG_HOME/guise` (if `$XDG_CONFIG_HOME` is set)
+    ///   2. `~/.config/guise`
+    ///   3. `~/.guise` (legacy, triggers migration)
     pub fn resolve() -> Result<Self> {
         let home = home_dir()?;
+        let guise_root = resolve_guise_root(&home)?;
         Ok(Paths {
             home: home.clone(),
             app: PathBuf::from(DEFAULT_APP_PATH),
-            guise_root: home.join(".guise"),
+            guise_root,
         })
     }
 
@@ -85,5 +92,57 @@ pub fn require_dir(p: &Path, what: &str) -> Result<()> {
     if !md.is_dir() {
         return Err(anyhow!("{what} at {} is not a directory", p.display()));
     }
+    Ok(())
+}
+
+/// Determine the guise root directory, migrating from `~/.guise` to
+/// `~/.config/guise` if the legacy location exists and the new one doesn't.
+fn resolve_guise_root(home: &Path) -> Result<PathBuf> {
+    let xdg_root = match std::env::var_os("XDG_CONFIG_HOME") {
+        Some(val) if !val.is_empty() => PathBuf::from(val).join("guise"),
+        _ => home.join(".config").join("guise"),
+    };
+    let legacy_root = home.join(".guise");
+
+    if xdg_root.exists() {
+        return Ok(xdg_root);
+    }
+
+    if legacy_root.exists() {
+        migrate_legacy_to_xdg(&legacy_root, &xdg_root)?;
+        return Ok(xdg_root);
+    }
+
+    // Neither exists yet — use the XDG path (created on first `guise add`).
+    Ok(xdg_root)
+}
+
+/// Move the legacy `~/.guise` tree to the XDG location atomically:
+/// rename the directory, then leave a symlink at the old path so any
+/// external scripts that still reference `~/.guise` keep working.
+fn migrate_legacy_to_xdg(legacy: &Path, xdg: &Path) -> Result<()> {
+    if let Some(parent) = xdg.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
+    }
+    std::fs::rename(legacy, xdg).with_context(|| {
+        format!(
+            "migrating {} -> {}",
+            legacy.display(),
+            xdg.display()
+        )
+    })?;
+
+    // Best-effort compatibility symlink: ~/.guise -> ~/.config/guise
+    #[cfg(unix)]
+    {
+        let _ = std::os::unix::fs::symlink(xdg, legacy);
+    }
+
+    eprintln!(
+        "guise: migrated data from {} -> {}",
+        legacy.display(),
+        xdg.display()
+    );
     Ok(())
 }
