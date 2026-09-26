@@ -37,7 +37,7 @@ pub fn run(paths: &Paths) -> Result<Report> {
 
     let app_ok = paths.app.exists();
     checks.push(Check {
-        name: "Claude.app".into(),
+        name: crate::paths::APP_LABEL.into(),
         ok: app_ok,
         detail: paths.app.display().to_string(),
     });

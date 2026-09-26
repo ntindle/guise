@@ -21,3 +21,16 @@ jobs:
         run: cargo test
       - name: Build (release)
         run: cargo build --release
+  check-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test
+        run: cargo test
+      - name: Build (release)
+        run: cargo build --release

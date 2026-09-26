@@ -152,7 +152,7 @@ fn ensure_shared_sessions(paths: &Paths, cfg: &ToolConfig, account: &Account) {
 
 /// Ensure an account's window is open (launch if needed) and bring it forward.
 fn open_account(paths: &Paths, account: &Account) -> Result<()> {
-    crate::paths::require_dir(&paths.app, "Claude.app")?;
+    crate::paths::require_dir(&paths.app, crate::paths::APP_LABEL)?;
     let ctrl = app::control();
     let data = account.data_dir();
 
@@ -182,7 +182,7 @@ fn open_account(paths: &Paths, account: &Account) -> Result<()> {
 
 /// Open every saved account's window (launch the ones not already running).
 fn open_all(paths: &Paths) -> Result<()> {
-    crate::paths::require_dir(&paths.app, "Claude.app")?;
+    crate::paths::require_dir(&paths.app, crate::paths::APP_LABEL)?;
     let accounts = account::list_accounts(paths)?;
     if accounts.is_empty() {
         println!("No saved accounts yet. Run `guise add <name>`.");
@@ -213,7 +213,7 @@ fn open_all(paths: &Paths) -> Result<()> {
 
 /// Create a new account and open a fresh window for the user to log into.
 fn add_account(paths: &Paths, name: &str, email: Option<String>) -> Result<()> {
-    crate::paths::require_dir(&paths.app, "Claude.app")?;
+    crate::paths::require_dir(&paths.app, crate::paths::APP_LABEL)?;
     let account = account::create_account(paths, name, email, now())?;
     let cfg = ToolConfig::load(paths).unwrap_or_default();
     ensure_shared_sessions(paths, &cfg, &account);
@@ -330,7 +330,7 @@ fn config_cmd(paths: &Paths, action: Option<ConfigAction>) -> Result<()> {
     let app_path = |c: &ToolConfig| {
         c.app_path
             .clone()
-            .unwrap_or_else(|| crate::paths::DEFAULT_APP_PATH.to_string())
+            .unwrap_or_else(|| crate::paths::default_app_path().display().to_string())
     };
     let sessions_root = |c: &ToolConfig| code_sessions_target(paths, c).display().to_string();
     match action {

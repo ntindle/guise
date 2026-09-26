@@ -7,10 +7,16 @@
 
 mod account;
 mod app;
+#[cfg(unix)]
+mod app_macos;
+#[cfg(windows)]
+mod app_windows;
 mod cli;
 mod config;
 mod doctor;
 mod paths;
+#[cfg(windows)]
+mod proc;
 
 fn main() {
     let argv: Vec<String> = std::env::args().collect();

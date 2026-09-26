@@ -9,7 +9,28 @@ use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
 
 /// Default macOS application bundle location.
+#[cfg(unix)]
 pub const DEFAULT_APP_PATH: &str = "/Applications/Claude.app";
+
+/// Effective default app location on this platform: the bundle const on
+/// macOS, the resolved install dir on Windows.
+pub fn default_app_path() -> PathBuf {
+    #[cfg(unix)]
+    {
+        PathBuf::from(DEFAULT_APP_PATH)
+    }
+    #[cfg(windows)]
+    {
+        resolve_app_dir()
+    }
+}
+
+/// Human label for the app install used in messages.
+#[cfg(unix)]
+pub const APP_LABEL: &str = "Claude.app";
+/// Human label for the app install used in messages.
+#[cfg(windows)]
+pub const APP_LABEL: &str = "Claude";
 
 /// Resolved, machine-specific locations guise operates on.
 #[derive(Debug, Clone)]
@@ -34,16 +55,27 @@ impl Paths {
     pub fn resolve() -> Result<Self> {
         let home = home_dir()?;
         let guise_root = resolve_guise_root(&home)?;
+        #[cfg(unix)]
+        let app = PathBuf::from(DEFAULT_APP_PATH);
+        #[cfg(windows)]
+        let app = resolve_app_dir();
         Ok(Paths {
             home: home.clone(),
-            app: PathBuf::from(DEFAULT_APP_PATH),
+            app,
             guise_root,
         })
     }
 
-    /// The Claude Desktop executable inside the bundle.
+    /// The Claude Desktop executable inside the install location.
     pub fn app_binary(&self) -> PathBuf {
-        self.app.join("Contents").join("MacOS").join("Claude")
+        #[cfg(unix)]
+        {
+            self.app.join("Contents").join("MacOS").join("Claude")
+        }
+        #[cfg(windows)]
+        {
+            app_binary_for(&self.app)
+        }
     }
 
     /// Directory holding one subdirectory per saved account.
@@ -59,11 +91,31 @@ impl Paths {
     /// Claude's standard `claude-code-sessions` location (also meld's default
     /// `sessions_root`). Used as the shared target so `meld` can merge chats.
     pub fn default_code_sessions_root(&self) -> PathBuf {
-        self.home
-            .join("Library")
-            .join("Application Support")
-            .join("Claude")
-            .join("claude-code-sessions")
+        #[cfg(unix)]
+        {
+            self.home
+                .join("Library")
+                .join("Application Support")
+                .join("Claude")
+                .join("claude-code-sessions")
+        }
+        #[cfg(windows)]
+        {
+            // Two Windows flavors exist: the direct install under Roaming
+            // (meld's Windows default — preferred so both tools agree with
+            // zero configuration) and the Store build under Local `Claude-3p`.
+            let roaming = app_data().join("Claude").join("claude-code-sessions");
+            let local = local_app_data()
+                .join("Claude-3p")
+                .join("claude-code-sessions");
+            if roaming.exists() {
+                roaming
+            } else if local.exists() {
+                local
+            } else {
+                roaming
+            }
+        }
     }
 
     /// meld's config file, if the user has meld installed.
@@ -72,12 +124,93 @@ impl Paths {
     }
 }
 
-/// Resolve the home directory from `$HOME`.
+/// Resolve the home directory from `$HOME` (`%USERPROFILE%` on Windows).
 pub fn home_dir() -> Result<PathBuf> {
     std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)
         .filter(|p| !p.as_os_str().is_empty())
-        .ok_or_else(|| anyhow!("$HOME is not set; cannot locate the home directory"))
+        .ok_or_else(|| {
+            anyhow!("neither $HOME nor %USERPROFILE% is set; cannot locate the home directory")
+        })
+}
+
+/// `%APPDATA%`, with a home-relative fallback.
+#[cfg(windows)]
+pub fn app_data() -> PathBuf {
+    std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| {
+            home_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join("AppData")
+                .join("Roaming")
+        })
+}
+
+/// `%LOCALAPPDATA%`, with a home-relative fallback.
+#[cfg(windows)]
+pub fn local_app_data() -> PathBuf {
+    std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| {
+            home_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join("AppData")
+                .join("Local")
+        })
+}
+
+/// Default Claude install dir on Windows: the direct install when its exe is
+/// present, else the folder holding the Store `claude-desktop` execution
+/// alias, else the direct dir (so `doctor` reports a useful missing path).
+#[cfg(windows)]
+pub fn resolve_app_dir() -> PathBuf {
+    let direct = local_app_data().join("Programs").join("Claude");
+    if direct.join("Claude.exe").exists() {
+        return direct;
+    }
+    if let Some(alias) = find_on_path("claude-desktop.exe") {
+        if let Some(parent) = alias.parent() {
+            return parent.to_path_buf();
+        }
+    }
+    direct
+}
+
+/// First `file` found on `%PATH%`, if any.
+#[cfg(windows)]
+fn find_on_path(file: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        if dir.as_os_str().is_empty() {
+            continue;
+        }
+        let candidate = dir.join(file);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+/// The Claude executable inside an install dir: direct `Claude.exe`, the
+/// Store `claude-desktop` alias, or the nested Store package layout.
+#[cfg(windows)]
+pub fn app_binary_for(app_dir: &Path) -> PathBuf {
+    for name in ["Claude.exe", "claude-desktop.exe"] {
+        let candidate = app_dir.join(name);
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+    let nested = app_dir.join("app").join("claude.exe");
+    if nested.exists() {
+        return nested;
+    }
+    app_dir.join("Claude.exe")
 }
 
 /// Whether a path exists (file, dir, or symlink).

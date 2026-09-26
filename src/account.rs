@@ -196,14 +196,19 @@ pub fn delete_account(account: &Account) -> Result<()> {
 
 const CODE_SESSIONS: &str = "claude-code-sessions";
 
-/// Read meld's `sessions_root` from its config, if meld is set up.
+/// Read meld's `sessions_root` from its config, if meld is set up. Tolerates
+/// both quote styles: meld writes single-quoted literal strings for
+/// Windows paths (backslashes) and double quotes elsewhere.
 pub fn meld_sessions_root(meld_config: &Path) -> Option<PathBuf> {
     let raw = std::fs::read_to_string(meld_config).ok()?;
     for line in raw.lines() {
         let l = line.trim();
         if let Some(rest) = l.strip_prefix("sessions_root") {
             if let Some(eq) = rest.find('=') {
-                let v = rest[eq + 1..].trim().trim_matches('"').trim();
+                let v = rest[eq + 1..]
+                    .trim()
+                    .trim_matches(|c| c == '"' || c == '\'')
+                    .trim();
                 if !v.is_empty() {
                     return Some(PathBuf::from(v));
                 }
@@ -246,12 +251,38 @@ pub fn ensure_meld_account_folder(account: &Account, target: &Path) -> Result<()
     Ok(())
 }
 
+/// Create a directory symlink. On Windows this needs Developer Mode or an
+/// elevated shell — surface that explicitly instead of a bare OS error.
+#[cfg(unix)]
+fn symlink_dir(target: &Path, link: &Path) -> Result<()> {
+    std::os::unix::fs::symlink(target, link)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn symlink_dir(target: &Path, link: &Path) -> Result<()> {
+    std::os::windows::fs::symlink_dir(target, link).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            anyhow!(
+                "cannot link {} -> {}: {e} (enable Developer Mode in Settings > System > For developers, or run guise elevated)",
+                link.display(),
+                target.display()
+            )
+        } else {
+            anyhow!(
+                "cannot link {} -> {}: {e}",
+                link.display(),
+                target.display()
+            )
+        }
+    })
+}
+
 /// Point this account's `claude-code-sessions` at the shared `target` folder.
 /// Idempotent: creates the symlink, repoints a stale one, or migrates a real
 /// directory's contents into `target` before replacing it with the symlink.
 /// The account's window must not be running when this is called.
 pub fn link_code_sessions(account: &Account, target: &Path) -> Result<()> {
-    use std::os::unix::fs::symlink;
     std::fs::create_dir_all(target).with_context(|| format!("creating {}", target.display()))?;
     std::fs::create_dir_all(account.data_dir())?;
     let link = account.data_dir().join(CODE_SESSIONS);
@@ -260,7 +291,7 @@ pub fn link_code_sessions(account: &Account, target: &Path) -> Result<()> {
         Ok(md) if md.file_type().is_symlink() => {
             if std::fs::read_link(&link).ok().as_deref() != Some(target) {
                 std::fs::remove_file(&link)?;
-                symlink(target, &link)?;
+                symlink_dir(target, &link)?;
             }
         }
         Ok(md) if md.is_dir() => {
@@ -268,14 +299,14 @@ pub fn link_code_sessions(account: &Account, target: &Path) -> Result<()> {
             // the directory for a symlink.
             merge_move(&link, target)?;
             let _ = std::fs::remove_dir_all(&link);
-            symlink(target, &link)?;
+            symlink_dir(target, &link)?;
         }
         Ok(_) => {
             std::fs::remove_file(&link)?;
-            symlink(target, &link)?;
+            symlink_dir(target, &link)?;
         }
         Err(_) => {
-            symlink(target, &link)?;
+            symlink_dir(target, &link)?;
         }
     }
     Ok(())
