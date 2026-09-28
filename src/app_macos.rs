@@ -39,7 +39,7 @@ impl AppControl for RealApp {
         Ok(!pids_for_data_dir(data_dir)?.is_empty())
     }
 
-    fn activate(&self, app_bundle: &Path) -> Result<()> {
+    fn activate(&self, app_bundle: &Path, _data_dir: &Path) -> Result<()> {
         // Focus the app without opening a new instance. Best-effort.
         let _ = Command::new("open").arg("-a").arg(app_bundle).status();
         Ok(())

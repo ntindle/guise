@@ -38,9 +38,17 @@ impl AppControl for WinApp {
         Ok(!crate::proc::pids_for_data_dir(data_dir)?.is_empty())
     }
 
-    fn activate(&self, _app_bundle: &Path) -> Result<()> {
-        // Bring *a* Claude window forward (they share one title, so a
-        // specific account can't be targeted). Best-effort.
+    fn activate(&self, _app_bundle: &Path, data_dir: &Path) -> Result<()> {
+        // Foreground THIS account's frontmost window, found by owning PID:
+        // every Claude window is titled "Claude", so title matching would
+        // bring the wrong account forward.
+        if let Ok(pids) = crate::proc::pids_for_data_dir(data_dir) {
+            if let Some(hwnd) = crate::proc::top_window_for_pids(&pids) {
+                crate::proc::foreground_window(hwnd);
+                return Ok(());
+            }
+        }
+        // Fallback: bring *a* Claude window forward. Best-effort.
         let _ = Command::new("powershell")
             .args([
                 "-NoProfile",

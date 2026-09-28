@@ -1,8 +1,10 @@
 //! Windows process enumeration + command-line reading via direct Win32 shims.
 //!
 //! Used to find Claude Desktop instances bound to a guise profile: the
-//! `--user-data-dir=<dir>` token in the process command line. No extra
-//! crates — just `kernel32`/`ntdll` entry points.
+//! `--user-data-dir=<dir>` token in the process command line. Also owns
+//! PID-targeted window activation (every Claude window shares one title, so
+//! focusing must go by owning process, never by title). No extra crates —
+//! just `kernel32`/`ntdll`/`user32` entry points.
 //!
 //! x86_64 only: reading another process's command line relies on documented
 //! x64 PEB/`RTL_USER_PROCESS_PARAMETERS` field offsets.
@@ -78,6 +80,22 @@ extern "system" {
         len: u32,
         ret_len: *mut u32,
     ) -> i32;
+}
+
+/// `ShowWindow` command restoring a minimized window.
+const SW_RESTORE: i32 = 9;
+
+#[link(name = "user32")]
+extern "system" {
+    fn EnumWindows(
+        cb: extern "system" fn(hwnd: Handle, lparam: isize) -> Bool,
+        lparam: isize,
+    ) -> Bool;
+    fn IsWindowVisible(hwnd: Handle) -> Bool;
+    fn GetWindowThreadProcessId(hwnd: Handle, pid: *mut Dword) -> Dword;
+    fn SetForegroundWindow(hwnd: Handle) -> Bool;
+    fn IsIconic(hwnd: Handle) -> Bool;
+    fn ShowWindow(hwnd: Handle, cmd: i32) -> Bool;
 }
 
 /// RAII closer so early returns can't leak handles.
@@ -203,6 +221,56 @@ pub fn pids_for_data_dir(data_dir: &std::path::Path) -> Result<Vec<u32>> {
     Ok(out)
 }
 
+/// Callback state for [`top_window_for_pids`]: the wanted PIDs plus the first
+/// match. Passed through `EnumWindows`' `lparam`; stack-borrowed, so it
+/// cannot outlive the enumeration.
+struct EnumCtx<'a> {
+    pids: &'a [u32],
+    found: Option<Handle>,
+}
+
+extern "system" fn enum_cb(hwnd: Handle, lparam: isize) -> Bool {
+    let ctx = unsafe { &mut *(lparam as *mut EnumCtx) };
+    unsafe {
+        if IsWindowVisible(hwnd) == 0 {
+            return 1;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        if ctx.pids.contains(&pid) {
+            ctx.found = Some(hwnd);
+            return 0;
+        }
+    }
+    1
+}
+
+/// First visible top-level window owned by one of `pids`. `EnumWindows`
+/// yields windows topmost-first, so this is the account's frontmost window —
+/// the one the user expects when returning to an account. `None` when no
+/// such window exists (yet).
+pub fn top_window_for_pids(pids: &[u32]) -> Option<Handle> {
+    if pids.is_empty() {
+        return None;
+    }
+    let mut ctx = EnumCtx { pids, found: None };
+    unsafe {
+        EnumWindows(enum_cb, &mut ctx as *mut EnumCtx as isize);
+    }
+    ctx.found
+}
+
+/// Restore (if minimized) and foreground `hwnd`. Best-effort: returns
+/// whether Windows accepted the foreground request.
+pub fn foreground_window(hwnd: Handle) -> bool {
+    unsafe {
+        if IsIconic(hwnd) != 0 {
+            ShowWindow(hwnd, SW_RESTORE);
+        }
+        SetForegroundWindow(hwnd) != 0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,6 +292,13 @@ mod tests {
             cmd.contains(name),
             "own cmdline should name the test binary: {cmd:?}"
         );
+    }
+
+    #[test]
+    fn no_pids_means_no_window() {
+        assert!(top_window_for_pids(&[]).is_none());
+        // A PID that cannot exist has no windows either.
+        assert!(top_window_for_pids(&[u32::MAX]).is_none());
     }
 
     #[test]

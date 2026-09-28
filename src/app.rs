@@ -18,8 +18,10 @@ pub trait AppControl {
     fn launch_instance(&self, app_bundle: &Path, data_dir: &Path) -> Result<()>;
     /// Is a Claude instance for exactly this `data_dir` currently running?
     fn is_instance_running(&self, data_dir: &Path) -> Result<bool>;
-    /// Bring Claude to the foreground.
-    fn activate(&self, app_bundle: &Path) -> Result<()>;
+    /// Bring the instance bound to `data_dir` to the foreground. Every
+    /// Claude window shares one title, so this must target the account's
+    /// own processes — never match by window title.
+    fn activate(&self, app_bundle: &Path, data_dir: &Path) -> Result<()>;
     /// Quit the Claude instance bound to `data_dir` (gracefully, then firmly).
     fn quit_instance(&self, data_dir: &Path, timeout: Duration) -> Result<()>;
 }

@@ -157,7 +157,7 @@ fn open_account(paths: &Paths, account: &Account) -> Result<()> {
     let data = account.data_dir();
 
     if ctrl.is_instance_running(&data)? {
-        ctrl.activate(&paths.app)?;
+        ctrl.activate(&paths.app, &data)?;
         println!(
             "✓ {} is already open — bringing it to the front.",
             account.meta.name
