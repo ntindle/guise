@@ -38,6 +38,26 @@ impl AppControl for WinApp {
         Ok(!crate::proc::pids_for_data_dir(data_dir)?.is_empty())
     }
 
+    fn relay_url(&self, app_bundle: &Path, data_dir: &Path, url: &str) -> Result<()> {
+        use std::os::windows::process::CommandExt;
+        // Same profile-scoped launch shape as a fresh login: when the
+        // account's instance is already running, the new process hands the
+        // URL to it and exits; when it is not, this cold-starts an instance
+        // that consumes the callback on arrival. Either way the callback
+        // reaches THIS profile instead of the default one.
+        let exe = crate::paths::app_binary_for(app_bundle);
+        Command::new(&exe)
+            .arg(format!("--user-data-dir={}", data_dir.display()))
+            .arg(url)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
+            .spawn()
+            .with_context(|| format!("relaying login callback via {}", exe.display()))?;
+        Ok(())
+    }
+
     fn activate(&self, _app_bundle: &Path, data_dir: &Path) -> Result<()> {
         // Foreground THIS account's frontmost window, found by owning PID:
         // every Claude window is titled "Claude", so title matching would

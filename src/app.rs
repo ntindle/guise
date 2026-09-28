@@ -22,6 +22,10 @@ pub trait AppControl {
     /// Claude window shares one title, so this must target the account's
     /// own processes — never match by window title.
     fn activate(&self, app_bundle: &Path, data_dir: &Path) -> Result<()>;
+    /// Deliver an OAuth callback URL (`claude://...`) to the instance bound
+    /// to `data_dir`: hands off when it is running, cold-starts it with the
+    /// URL attached when it is not. Detached; returns immediately.
+    fn relay_url(&self, app_bundle: &Path, data_dir: &Path, url: &str) -> Result<()>;
     /// Quit the Claude instance bound to `data_dir` (gracefully, then firmly).
     fn quit_instance(&self, data_dir: &Path, timeout: Duration) -> Result<()>;
 }

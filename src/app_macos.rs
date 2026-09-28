@@ -45,6 +45,27 @@ impl AppControl for RealApp {
         Ok(())
     }
 
+    fn relay_url(&self, app_bundle: &Path, data_dir: &Path, url: &str) -> Result<()> {
+        let mut cmd = Command::new("open");
+        if self.is_instance_running(data_dir)? {
+            // Deliver the callback to the running instance.
+            cmd.arg("-a").arg(app_bundle).arg(url);
+        } else {
+            // Cold-start the profile with the callback attached.
+            cmd.arg("-n")
+                .arg("-a")
+                .arg(app_bundle)
+                .arg("--args")
+                .arg(format!("--user-data-dir={}", data_dir.display()))
+                .arg(url);
+        }
+        let status = cmd.status().context("relaying login callback via `open`")?;
+        if !status.success() {
+            return Err(anyhow!("failed to relay the login callback"));
+        }
+        Ok(())
+    }
+
     fn quit_instance(&self, data_dir: &Path, timeout: Duration) -> Result<()> {
         let pids = pids_for_data_dir(data_dir)?;
         if pids.is_empty() {

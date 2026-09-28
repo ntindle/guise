@@ -75,6 +75,11 @@ $ guise add work
 
 Log into that window normally. Done — work stays logged in from now on.
 
+> **Browser login bounced to your main window?** OAuth callbacks always open
+> the default Claude instance. Copy the `claude://...` URL from the browser's
+> address bar and run `guise relay work "<paste-url>"` (quotes needed) to
+> deliver it to the right window.
+
 **2. Save your other account.** Opens a *second* window (the first stays logged in):
 
 ```console

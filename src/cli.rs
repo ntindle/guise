@@ -13,7 +13,9 @@ use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
 use std::time::Duration;
 
-pub const RESERVED: [&str; 7] = ["open", "add", "ls", "rm", "doctor", "config", "all"];
+pub const RESERVED: [&str; 8] = [
+    "open", "add", "ls", "rm", "doctor", "config", "all", "relay",
+];
 const QUIT_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Parser, Debug)]
@@ -41,6 +43,12 @@ pub enum Commands {
         /// Email to show in the listing (optional label).
         #[arg(long)]
         email: Option<String>,
+    },
+    /// Deliver a browser OAuth callback (`claude://...`) to an account's window.
+    Relay {
+        name: String,
+        /// The callback URL from the browser (quote it: it contains `&`).
+        url: String,
     },
     /// List saved accounts (● marks the ones open right now).
     Ls {
@@ -100,6 +108,10 @@ fn run(paths: &Paths, command: Commands) -> Result<()> {
         }
         Commands::All => open_all(paths),
         Commands::Add { name, email } => add_account(paths, &name, email),
+        Commands::Relay { name, url } => {
+            let account = account::resolve_account(paths, &name)?;
+            relay_url(paths, &account, &url)
+        }
         Commands::Ls { json } => list(paths, json),
         Commands::Rm { name } => {
             let account = account::resolve_account(paths, &name)?;
@@ -211,6 +223,25 @@ fn open_all(paths: &Paths) -> Result<()> {
     Ok(())
 }
 
+/// Deliver an OAuth callback URL (`claude://...`) to an account's window.
+///
+/// Browser OAuth always resolves to the default Claude instance, so a fresh
+/// profile's login stalls while the main window pops forward. Relaying the
+/// callback through a profile-scoped launch hands it to the right instance
+/// instead (or cold-starts one that consumes it on arrival).
+fn relay_url(paths: &Paths, account: &Account, url: &str) -> Result<()> {
+    if !url.to_lowercase().starts_with("claude://") {
+        return Err(anyhow!("expected a claude:// callback URL, got '{url}'"));
+    }
+    crate::paths::require_dir(&paths.app, crate::paths::APP_LABEL)?;
+    app::control().relay_url(&paths.app, &account.data_dir(), url)?;
+    println!(
+        "✓ Sent the login callback to {}. Its window will finish signing in — `guise {}` brings it forward.",
+        account.meta.name, account.meta.name
+    );
+    Ok(())
+}
+
 /// Create a new account and open a fresh window for the user to log into.
 fn add_account(paths: &Paths, name: &str, email: Option<String>) -> Result<()> {
     crate::paths::require_dir(&paths.app, crate::paths::APP_LABEL)?;
@@ -220,8 +251,8 @@ fn add_account(paths: &Paths, name: &str, email: Option<String>) -> Result<()> {
     let ctrl = app::control();
     ctrl.launch_instance(&paths.app, &account.data_dir())?;
     println!(
-        "✓ Created {}. A fresh Claude window is opening — log into this account there.\n  From now on: `guise {}` reopens it, already logged in.",
-        account.meta.name, account.meta.name
+        "✓ Created {0}. A fresh Claude window is opening — log into this account there.\n  If the browser login bounces to your main window instead, copy the claude:// URL\n  from the browser address bar and run: guise relay {0} \"<paste-url>\"\n  From now on: `guise {0}` reopens it, already logged in.",
+        account.meta.name
     );
     Ok(())
 }
