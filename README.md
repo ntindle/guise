@@ -205,9 +205,14 @@ guise config set code-sessions-root <dir>  # override the shared folder
 ```
 
 By default the shared folder is meld's configured `sessions_root`, falling back
-to Claude's standard location. On Windows the link is a directory symlink, which
-needs **Developer Mode** (Settings > System > For developers) or an elevated
-shell — without it, guise prints a note and keeps going.
+to Claude's standard location. To have meld merge across the accounts, point it
+at that shared folder: run `meld config init`, set `sessions_root` in
+`~/.meld/config.toml` to the folder `guise doctor` shows, then
+`meld scan && meld sync`. Note meld watches one tree at a time — the shared
+Desktop folder or your CLI sessions, not both. On Windows the link is a
+directory symlink, which needs **Developer Mode** (Settings > System >
+For developers) or an elevated shell — without it, guise prints a note and
+keeps going.
 
 ## Good to know
 
